@@ -1,0 +1,8 @@
+stages:
+  audit:
+    cmd: python -m urban_skin.data.audit --data-dir data/dacl10k --output artifacts/dacl10k_audit.json
+    deps:
+      - src/urban_skin/data/audit.py
+      - data/dacl10k/samples.json
+    outs:
+      - artifacts/dacl10k_audit.json
