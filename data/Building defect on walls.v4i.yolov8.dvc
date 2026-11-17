@@ -1,0 +1,6 @@
+outs:
+- md5: fdb615a86593b8c724a1b8286bf5792e.dir
+  size: 30182407
+  nfiles: 2835
+  hash: md5
+  path: Building defect on walls.v4i.yolov8

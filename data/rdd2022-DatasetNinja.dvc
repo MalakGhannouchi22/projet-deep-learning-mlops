@@ -1,0 +1,6 @@
+outs:
+- md5: 1be159299b663072f30a514fb458099a.dir
+  size: 127102417
+  nfiles: 10743
+  hash: md5
+  path: rdd2022-DatasetNinja

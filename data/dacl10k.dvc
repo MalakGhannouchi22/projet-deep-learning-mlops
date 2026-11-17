@@ -1,0 +1,6 @@
+outs:
+- md5: 66dce90d6611b0e2f17c01f186d25960.dir
+  size: 5215368022
+  nfiles: 17859
+  hash: md5
+  path: dacl10k

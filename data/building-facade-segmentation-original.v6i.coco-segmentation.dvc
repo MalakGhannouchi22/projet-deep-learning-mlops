@@ -1,0 +1,6 @@
+outs:
+- md5: 4feac2c921e28ed6ce481be45d51ab18.dir
+  size: 167779607
+  nfiles: 2231
+  hash: md5
+  path: building-facade-segmentation-original.v6i.coco-segmentation

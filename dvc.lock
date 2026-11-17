@@ -1,0 +1,19 @@
+schema: '2.0'
+stages:
+  audit:
+    cmd: .\.venv\Scripts\python.exe -m urban_skin.data.audit --data-dir 
+      data/dacl10k --output artifacts/dacl10k_audit.json
+    deps:
+    - path: data/dacl10k/samples.json
+      hash: md5
+      md5: 860487d4aa01171f0acbeabf866973ac
+      size: 64117047
+    - path: src/urban_skin/data/audit.py
+      hash: md5
+      md5: aa1728361f410aaa8e2ad07e687c9e30
+      size: 2282
+    outs:
+    - path: artifacts/dacl10k_audit.json
+      hash: md5
+      md5: 91c3ffa354df56ad1fa810ccc4aec65f
+      size: 652

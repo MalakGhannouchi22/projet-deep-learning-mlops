@@ -1,0 +1,6 @@
+outs:
+- md5: 028f39015bbcd1b36377313462f37ba4.dir
+  size: 394068786
+  nfiles: 2203
+  hash: md5
+  path: Corrosion Condition State Semantic Segmentation Dataset
