@@ -39,7 +39,7 @@ The first vertical slice is intentionally honest and reproducible:
 - `src/urban_skin/data/prepare.py` converts DACL10K's FiftyOne JSON export into a
   compact, reproducible polygon manifest.
 - `src/urban_skin/models/` contains a small U-Net segmentation baseline, training,
-  and IoU evaluation.
+  and IoU/Dice evaluation for every normalized segmentation manifest.
 - `src/urban_skin/decision/health.py` converts predicted damage coverage into a
   transparent condition score and intervention priority.
 - `backend/app` exposes typed FastAPI contracts and `/health`, `/model/metadata`,
@@ -50,6 +50,20 @@ The first vertical slice is intentionally honest and reproducible:
 
 FloodNet and RescueNet are not installed yet. Add them later as separate folders
 and dataset adapters; do not mix files between datasets.
+
+The currently usable supervised datasets are prepared independently:
+
+| Dataset | Local format | Records | Training treatment |
+| --- | --- | ---: | --- |
+| DACL10K | FiftyOne polygons | 8,923 | Native semantic segmentation |
+| Wall defects | YOLO bounding boxes | 1,416 | Boxes rasterized as coarse masks |
+| Building facade | COCO polygons | 2,226 | Native polygon segmentation |
+| Corrosion | LabelMe polygons + class masks | 440 | Native class-mask segmentation |
+| RDD2022 | DatasetNinja test split | 1,705 | Audit only; no local training split |
+
+The wall conversion is deliberately documented as an approximation: bounding
+boxes do not describe the exact defect shape. RDD2022 is not trained because
+the local copy contains only `test`, so a supervised score would be invalid.
 
 ## Architecture
 
@@ -206,6 +220,46 @@ docker compose up --build
 
 The API is then available at <http://localhost:8000/docs> and the dashboard at
 <http://localhost:5173>.
+
+## Train the additional datasets
+
+Generate the normalized manifests:
+
+```powershell
+.\.venv\Scripts\python.exe -m urban_skin.data.prepare_datasets walls
+.\.venv\Scripts\python.exe -m urban_skin.data.prepare_datasets facade
+.\.venv\Scripts\python.exe -m urban_skin.data.prepare_datasets corrosion
+```
+
+Run a small CPU smoke experiment for each dataset:
+
+```powershell
+.\.venv\Scripts\python.exe -m urban_skin.models.train_universal `
+  --manifest data\processed\walls_manifest.json --dataset walls `
+  --output models\walls_tiny_unet.pt --max-samples 128 --epochs 2 --cpu
+.\.venv\Scripts\python.exe -m urban_skin.models.train_universal `
+  --manifest data\processed\facade_manifest.json --dataset facade `
+  --output models\facade_tiny_unet.pt --max-samples 128 --epochs 2 --cpu
+.\.venv\Scripts\python.exe -m urban_skin.models.train_universal `
+  --manifest data\processed\corrosion_manifest.json --dataset corrosion `
+  --output models\corrosion_tiny_unet.pt --max-samples 128 --epochs 2 --cpu
+```
+
+Evaluate datasets that have a validation split:
+
+```powershell
+.\.venv\Scripts\python.exe -m urban_skin.models.evaluate_universal `
+  --manifest data\processed\facade_manifest.json `
+  --checkpoint models\facade_tiny_unet.pt
+.\.venv\Scripts\python.exe -m urban_skin.models.evaluate_universal `
+  --manifest data\processed\corrosion_manifest.json `
+  --checkpoint models\corrosion_tiny_unet.pt
+```
+
+The evaluator reports mean IoU and Dice. These are segmentation-quality
+metrics, not the explainable infrastructure health score. Walls currently have
+no validation split, so they can be trained but not honestly scored until one
+is created.
 
 ## What this milestone obtained
 
