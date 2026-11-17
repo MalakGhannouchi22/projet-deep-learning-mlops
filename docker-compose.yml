@@ -6,8 +6,8 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MODEL_PATH: /app/models/dacl10k_tiny_unet.pt
-      MODEL_VERSION: dacl10k-baseline
+      MODEL_PATH: /app/models/urban_skin.onnx
+      MODEL_VERSION: untrained
     volumes:
       - ./models:/app/models
   frontend:

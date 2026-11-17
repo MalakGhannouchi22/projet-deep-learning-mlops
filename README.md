@@ -4,6 +4,24 @@ Urban Skin is a local-first computer-vision and MLOps project for detecting
 infrastructure damage and turning visual evidence into an explainable condition
 score and intervention priority.
 
+## Project progress
+
+The project has been initialized as a complete local-first computer-vision
+prototype. The main work completed so far includes:
+
+- organizing the infrastructure-damage datasets and adding audit/preparation
+  scripts for reproducible data processing;
+- implementing a small U-Net segmentation baseline with training and evaluation;
+- adding health-score and intervention-priority logic based on predicted damage;
+- exposing model metadata, health checks, and prediction endpoints through FastAPI;
+- creating a React frontend for interacting with the API;
+- configuring tests, Ruff, Docker Compose, DVC, MLflow, and GitHub Actions for
+  development and MLOps workflows.
+
+The current model checkpoint is a local PyTorch artifact. The API is ready to
+run, but production inference requires a supplied model artifact and configured
+model path.
+
 ## What exists tonight
 
 The first vertical slice is intentionally honest and reproducible:
@@ -177,7 +195,9 @@ Open <http://localhost:5173>, choose an image, and click **Analyze image**.
 The dashboard calls the FastAPI service and displays the condition score,
 priority, and latency.
 
-When the local model checkpoint exists, the two services can also be started
+The Docker serving image uses the lightweight API runtime. The local PyTorch
+checkpoint is used with the project virtual environment; ONNX packaging is the
+next model-serving milestone. The two containerized services can be started
 together:
 
 ```powershell
