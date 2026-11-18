@@ -1,30 +1,37 @@
 # Urban Skin
 
 Urban Skin is a local-first computer-vision and MLOps project for detecting
-infrastructure damage and turning visual evidence into an explainable condition
-score and intervention priority.
+several types of infrastructure damage and turning visual evidence into an
+explainable condition score and intervention priority. The project is not based
+on one dataset: it builds one reproducible pipeline that adapts to the labeled
+datasets currently available on my computer.
 
-## Project progress
+## Project summary
 
-The project has been initialized as a complete local-first computer-vision
-prototype. The main work completed so far includes:
+I completed the following parts:
 
-- organizing the infrastructure-damage datasets and adding audit/preparation
-  scripts for reproducible data processing;
-- implementing a small U-Net segmentation baseline with training and evaluation;
-- adding health-score and intervention-priority logic based on predicted damage;
-- exposing model metadata, health checks, and prediction endpoints through FastAPI;
-- creating a React frontend for interacting with the API;
-- configuring tests, Ruff, Docker Compose, DVC, MLflow, and GitHub Actions for
-  development and MLOps workflows.
+- audited five independent datasets and identified their annotation formats;
+- created separate adapters for DACL10K, wall defects, building facade, and
+  corrosion;
+- converted the compatible labeled datasets into normalized segmentation
+  manifests;
+- trained separate segmentation checkpoints for DACL10K, walls, facade, and
+  corrosion;
+- added class-weighted training to reduce background-only predictions;
+- evaluated the datasets that have a real validation split;
+- created an explainable condition-score and intervention-priority layer;
+- connected the models to a typed FastAPI service and React dashboard;
+- added MLflow, DVC, Docker, Pytest, Ruff, GitHub Actions, and GitHub version
+  control.
 
-The current model checkpoint is a local PyTorch artifact. The API is ready to
-run, but production inference requires a supplied model artifact and configured
-model path.
+The project is a working research baseline. It is not presented as a final
+production model: the results show which datasets and modeling decisions still
+need improvement.
 
-## Current project status
+## Work completed by dataset
 
-The first vertical slice is intentionally honest and reproducible:
+Each dataset remains in its own folder under `data/`. I did not merge labels
+from unrelated datasets into one misleading class list.
 
 - `data/` contains independent dataset folders:
   - `data/dacl10k`: semantic segmentation, 8,922 images.
@@ -64,6 +71,21 @@ The currently usable supervised datasets are prepared independently:
 The wall conversion is deliberately documented as an approximation: bounding
 boxes do not describe the exact defect shape. RDD2022 is not trained because
 the local copy contains only `test`, so a supervised score would be invalid.
+
+### What I actually trained
+
+| Dataset | Preparation | Model checkpoint | Evaluation status |
+| --- | --- | --- | --- |
+| DACL10K | FiftyOne polygons converted to masks | Separate Tiny U-Net | Validation pipeline works; current small run scored IoU `0.000000` |
+| Wall defects | YOLO boxes converted to coarse rectangular masks | Separate Tiny U-Net | Training works; no validation split is available |
+| Building facade | COCO polygons converted to masks | Separate Tiny U-Net | Validation pipeline works; current small run scored IoU `0.000000` |
+| Corrosion | Existing class-ID bitmap masks used directly | Separate weighted Tiny U-Net | IoU `0.368003`, Dice `0.538015` |
+| RDD2022 | Audited only | No training checkpoint | Local copy has test data only |
+
+The phrase “separate model” is important: I trained one checkpoint per dataset.
+The models share the same architecture and training code, but they do not share
+weights or pretend that a facade class means the same thing as a corrosion
+class.
 
 ## Architecture
 
@@ -221,7 +243,7 @@ docker compose up --build
 The API is then available at <http://localhost:8000/docs> and the dashboard at
 <http://localhost:5173>.
 
-## Train the additional datasets
+## Train all available datasets
 
 Generate the normalized manifests:
 
@@ -231,7 +253,7 @@ Generate the normalized manifests:
 .\.venv\Scripts\python.exe -m urban_skin.data.prepare_datasets corrosion
 ```
 
-Run a small CPU smoke experiment for each dataset:
+Run a reproducible CPU experiment for each available supervised dataset:
 
 ```powershell
 .\.venv\Scripts\python.exe -m urban_skin.models.train_universal `
@@ -263,7 +285,8 @@ is created.
 
 For the strongest local CPU experiment used for this milestone, I trained up
 to 512 samples for five epochs with class-weighted cross-entropy, a 128-pixel
-input, and MLflow tracking:
+input, and MLflow tracking. The same training strategy was applied separately
+to DACL10K, walls, facade, and corrosion.
 
 ```powershell
 .\.venv\Scripts\python.exe -m urban_skin.models.train `
@@ -335,14 +358,62 @@ Training runs can be tracked directly in MLflow:
 Then open <http://127.0.0.1:5000> to inspect parameters, loss, and checkpoint
 artifacts.
 
-The next modelling milestone is to choose one task and keep it consistent:
+The next modelling milestone is a controlled comparison of stronger
+segmentation models on DACL10K, facade, and corrosion, followed by a proper
+detection experiment for the YOLO-format wall data and RDD2022 when a labeled
+training split is available. I will not claim FloodNet, RescueNet, or ONNX
+results until their data and artifacts are actually present and measured.
 
-1. **DACL10K path:** semantic segmentation of bridge damage.
-2. **RDD2022 path:** object detection of road damage.
+## Models explained for beginners
 
-Do not claim FloodNet, RescueNet, or ONNX results until their data and artifacts
-are actually present and measured. The first PyTorch baseline is intentionally
-small and should be retrained on a meaningful sample before scientific claims.
+### Why Tiny U-Net?
+
+The first task is mostly **semantic segmentation**: for every pixel, the model
+must decide whether it is background or belongs to a damage/component class.
+Tiny U-Net is a sensible first model because U-Net was designed for pixel-level
+segmentation:
+
+1. The encoder looks at the image and learns features such as edges, cracks,
+   color changes, and shapes.
+2. The decoder enlarges those features back to the original image resolution.
+3. Skip connections pass fine spatial details from the encoder to the decoder.
+4. The final output is a class prediction for every pixel.
+
+I chose the Tiny version because it is small enough to train on a local CPU,
+fast enough for repeated experiments, and simple enough to debug. It proves
+that the complete data-to-API pipeline works before introducing a large
+pretrained model that would consume more storage and make failures harder to
+diagnose.
+
+Tiny U-Net is not claimed to be the best possible architecture. The next
+research comparison should include a pretrained segmentation model, stronger
+augmentation, and a proper experiment table. For the original YOLO-format
+wall task and RDD2022 detection task, a YOLO detector would also be a valid
+future model, but YOLO is not the model used for the current segmentation
+experiments.
+
+### Why “weighted” training?
+
+“Weighted” does not mean a second neural-network architecture. It means the
+same Tiny U-Net receives a better loss function. Infrastructure images usually
+contain many more background pixels than damaged pixels. Without correction, a
+model can obtain a deceptively low loss by predicting background almost
+everywhere.
+
+I calculate pixel frequencies from each training dataset and give rarer classes
+more influence in cross-entropy loss. The weights are bounded so that a very
+rare class cannot destabilize training. This is why the project has ordinary
+Tiny U-Net checkpoints and weighted Tiny U-Net checkpoints:
+
+- ordinary training is the simple baseline;
+- weighted training is the improved baseline for imbalanced masks;
+- both use the same network and can be compared fairly.
+
+The weighted corrosion run improved the measured result to IoU `0.368003` and
+Dice `0.538015`. DACL10K and facade still scored zero on the checked small
+validation samples, so weighting alone did not solve those datasets. That is a
+useful finding, not a reason to hide the result: those datasets need more
+training, better validation inspection, augmentation, and stronger models.
 
 ## Technical explanation of the project
 
