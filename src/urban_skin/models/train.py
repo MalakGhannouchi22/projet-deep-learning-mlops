@@ -12,6 +12,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from urban_skin.data.segmentation_dataset import Dacl10kSegmentationDataset
+from urban_skin.models.losses import pixel_class_weights
 from urban_skin.models.segmentation import TinyUNet
 
 
@@ -25,7 +26,9 @@ def train(args: argparse.Namespace) -> dict[str, object]:
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
     model = TinyUNet(args.number_of_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
-    loss_function = nn.CrossEntropyLoss()
+    loss_function = nn.CrossEntropyLoss(
+        weight=pixel_class_weights(dataset, args.number_of_classes).to(device)
+    )
     history = []
     mlflow_run = None
     if args.mlflow:

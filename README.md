@@ -22,7 +22,7 @@ The current model checkpoint is a local PyTorch artifact. The API is ready to
 run, but production inference requires a supplied model artifact and configured
 model path.
 
-## What exists tonight
+## Current project status
 
 The first vertical slice is intentionally honest and reproducible:
 
@@ -114,7 +114,7 @@ In the VS Code terminal, run:
 Select the interpreter with `Ctrl+Shift+P` -> **Python: Select Interpreter** ->
 `.venv\Scripts\python.exe`.
 
-## First demonstrable run
+## Reproducible project workflow
 
 Run the dataset audit:
 
@@ -261,7 +261,24 @@ metrics, not the explainable infrastructure health score. Walls currently have
 no validation split, so they can be trained but not honestly scored until one
 is created.
 
-## What this milestone obtained
+For the strongest local CPU experiment used for this milestone, I trained up
+to 512 samples for five epochs with class-weighted cross-entropy, a 128-pixel
+input, and MLflow tracking:
+
+```powershell
+.\.venv\Scripts\python.exe -m urban_skin.models.train `
+  --manifest data\processed\dacl10k_manifest.json `
+  --output models\dacl10k_tiny_unet_weighted.pt `
+  --max-samples 512 --epochs 5 --image-size 128 --batch-size 8 --cpu `
+  --mlflow --run-name dacl10k-weighted-512x5
+```
+
+The same options apply to `train_universal` for walls, facade, and corrosion.
+Increasing the sample limit and epochs improves the experiment only when the
+computer has enough time and memory; the command remains reproducible because
+the seed is fixed.
+
+## Current measured results
 
 The current audit produced:
 
@@ -272,21 +289,25 @@ The current audit produced:
 19 damage/component classes
 ```
 
-The first reproducible training smoke run used 16 images for one CPU epoch and
-produced:
+The best reproducible local CPU experiment used class-weighted cross-entropy,
+512 training samples where available, five epochs, 128-pixel inputs, and
+MLflow tracking. The measured outputs were:
 
 ```text
-checkpoint: models/dacl10k_tiny_unet.pt
-train_loss: 3.050476
-validation mean IoU on 16 images: 0.004846
+DACL10K:  final train loss 2.253571; validation mean IoU 0.000000
+Walls:    final train loss 1.086029; no validation split
+Facade:   final train loss 0.529286; validation mean IoU 0.000000
+Corrosion: final train loss 0.561511; validation mean IoU 0.368003; Dice 0.538015
 ```
 
-This is an integration baseline, not a publishable result. The low IoU is useful:
-it proves the data conversion, model, checkpoint, evaluator, and API are connected,
-while showing that the next step must use more data, more epochs, class balancing,
-and a stronger architecture before claiming performance.
+These results are honest local baselines, not publishable claims. The decreasing
+training losses and nonzero corrosion validation score show that the full
+pipeline runs, while the zero DACL10K and facade scores identify the next
+research work: more data and epochs, stronger augmentation, validation
+inspection, class-specific analysis, and comparison with pretrained models.
+The evaluation code reports the measured result instead of hiding a weak model.
 
-## DVC and MLflow next
+## DVC and MLflow
 
 Do not commit the 5 GB dataset or model weights to Git. After installing the
 optional ML tooling:
@@ -323,11 +344,113 @@ Do not claim FloodNet, RescueNet, or ONNX results until their data and artifacts
 are actually present and measured. The first PyTorch baseline is intentionally
 small and should be retrained on a meaningful sample before scientific claims.
 
-## Tomorrow's technical explanation
+## Technical explanation of the project
 
-Say: “We established a reproducible vertical slice before training. The data
-audit is independent of the API, the API has typed contracts and explicit
-readiness errors, tests cover the contracts, and the same project has DVC,
-MLflow, Docker, and CI extension points. The next controlled experiment is
-dataset preparation and a baseline model; FloodNet and RescueNet are isolated
-future adapters, not unverified dependencies.”
+I built Urban Skin as an end-to-end computer-vision and MLOps system. The
+objective is to detect visible infrastructure damage, quantify the affected
+area, convert that evidence into an explainable condition score, and expose
+the result through an API and a web dashboard.
+
+### Datasets
+
+- **DACL10K** contains bridge and infrastructure images with polygon-level
+  semantic-segmentation labels. It is the main dataset for the first idea.
+  Each pixel is assigned to background or one of 19 damage/component classes.
+- **Building defect on walls** contains YOLO bounding boxes for five wall
+  problems. Its boxes are rasterized into rectangular masks so it can use the
+  common segmentation trainer. This is useful for integration, but it is an
+  approximation because a box is not an exact defect contour.
+- **Building facade** contains COCO polygon segmentation labels for 11 facade
+  and surrounding-object classes. The COCO polygons are converted into the
+  normalized manifest without losing their shapes.
+- **Corrosion Condition State** contains LabelMe annotations and class masks
+  for fair, poor, and severe corrosion. The existing bitmap masks preserve the
+  class IDs and are used directly.
+- **RDD2022** is present locally for auditing, but the available copy contains
+  only a test split. I do not train or report a supervised score for it without
+  labeled training data.
+- FloodNet and RescueNet are not included because they are not installed. They
+  remain future independent adapters and are not represented as completed work.
+
+Every dataset remains in its own folder under `data/`. The adapters create
+small JSON manifests under `data/processed/`, which makes the conversion
+repeatable and keeps the original files untouched.
+
+### Models
+
+The current baseline is a **Tiny U-Net** implemented in PyTorch. U-Net has an
+encoder that learns visual features and a decoder that restores spatial
+resolution, making it appropriate for pixel-level damage masks. “Tiny” means
+the network is intentionally lightweight enough to train locally.
+
+The same architecture is used separately per dataset; the datasets are not
+silently mixed because their labels describe different visual concepts. The
+wall model consumes approximated masks, while DACL10K, facade, and corrosion
+models consume polygon or bitmap segmentation labels.
+
+This is a defensible baseline, not a claim that Tiny U-Net is the final best
+model. A production comparison should add a stronger pretrained segmentation
+model after the data pipeline is validated. Detection models such as YOLO are
+appropriate for the original wall and RDD2022 bounding-box tasks, but YOLO is
+not the model used for the current DACL10K segmentation path.
+
+The trainer uses deterministic seeds and inverse-frequency pixel weighting
+bounded to a safe range. This reduces the tendency to predict only background,
+which is a common failure mode when damage pixels are much less frequent than
+background pixels. The weighting is calculated from each training manifest, not
+copied between datasets.
+
+### Metrics
+
+- **Cross-entropy loss** is optimized during training. Lower values mean the
+  predicted class distribution is closer to the target mask.
+- **Intersection over Union (IoU)** is the intersection divided by the union of
+  predicted and true pixels. Mean IoU averages the class IoUs and penalizes
+  inaccurate regions.
+- **Dice score** is `2 * intersection / (predicted area + true area)`. It is
+  especially useful when damaged pixels are much rarer than background.
+- **Condition score** is a separate transparent decision output from
+  `src/urban_skin/decision/health.py`; it is not a substitute for IoU or Dice.
+  It converts predicted damage coverage into a 0–100 score, where higher means
+  less predicted damage, and maps it to monitor, planned, or urgent priority.
+- **Latency** is reported by the API to measure serving responsiveness.
+
+Validation metrics must only be reported for a real validation split. Since the
+wall dataset currently has only training data, the project trains it but does
+not invent a validation score.
+
+### Technologies and their roles
+
+- **Python and PyTorch:** data loading, model definition, optimization, and
+  checkpoint creation.
+- **Pillow and NumPy:** image and mask conversion.
+- **FastAPI and Pydantic:** typed HTTP inference service and validation.
+- **React and Vite:** upload interface and result dashboard.
+- **MLflow:** records training parameters, losses, experiments, and checkpoint
+  artifacts.
+- **DVC:** tracks large dataset versions and reproducible data stages without
+  putting gigabytes of data in Git.
+- **Docker Compose:** runs the API and frontend as reproducible services.
+- **Pytest and Ruff:** automated behavior tests and Python linting.
+- **GitHub Actions:** continuous checks for changes pushed to the repository.
+- **Git and GitHub:** source history and collaboration; model weights and raw
+  datasets remain local or DVC-managed.
+
+### How the pieces connect
+
+1. I audit each dataset and confirm its format and available splits.
+2. I run the relevant adapter to create a normalized manifest.
+3. I load images and masks with the shared PyTorch dataset class.
+4. I train one Tiny U-Net checkpoint per dataset and optionally log the run in
+   MLflow.
+5. I evaluate only datasets with validation data using IoU and Dice.
+6. The API loads a supplied checkpoint, predicts a mask, measures damage
+   coverage, and returns the condition score and priority.
+7. React uploads an image and displays the typed API response.
+8. Ruff, Pytest, DVC, the frontend build, Docker, and endpoint checks verify
+   the complete workflow.
+
+The result is a reproducible baseline: data preparation, training, evaluation,
+decision logic, serving, interface, tracking, versioning, testing, and
+containerization are all connected while unsupported datasets and unavailable
+artifacts are explicitly reported rather than simulated.
