@@ -1,8 +1,16 @@
+from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.main import app
+from backend.app.main import app, service
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def isolate_model_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(service, "model_path", Path("__missing_test_model__.onnx"))
 
 
 def test_health_reports_explicit_untrained_state() -> None:
