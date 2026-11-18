@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from urban_skin.data.universal_segmentation_dataset import UniversalSegmentationDataset
-from urban_skin.models.segmentation import TinyUNet
+from urban_skin.models.segmentation import build_segmentation_model
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, object]:
@@ -20,7 +20,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, object]:
     )
     if not dataset:
         raise ValueError("The manifest has no validation records to evaluate.")
-    model = TinyUNet(checkpoint["number_of_classes"])
+    model = build_segmentation_model(
+        checkpoint.get("architecture", "tiny_unet"), checkpoint["number_of_classes"]
+    )
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     intersections = torch.zeros(checkpoint["number_of_classes"], dtype=torch.float64)

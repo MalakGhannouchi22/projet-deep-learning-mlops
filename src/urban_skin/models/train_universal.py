@@ -13,13 +13,16 @@ from torch.utils.data import DataLoader
 
 from urban_skin.data.universal_segmentation_dataset import UniversalSegmentationDataset
 from urban_skin.models.losses import pixel_class_weights
-from urban_skin.models.segmentation import TinyUNet
+from urban_skin.models.segmentation import build_segmentation_model
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--dataset", required=True)
+    parser.add_argument(
+        "--architecture", choices=("tiny_unet", "residual_unet"), default="tiny_unet"
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=2)
     parser.add_argument("--max-samples", type=int, default=128)
@@ -30,7 +33,7 @@ def main() -> None:
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--mlflow", action="store_true")
     parser.add_argument("--tracking-uri", default="file:./mlruns")
-    parser.add_argument("--experiment", default="urban-skin-multi-dataset")
+    parser.add_argument("--experiment")
     parser.add_argument("--run-name")
     args = parser.parse_args()
     random.seed(args.seed)
@@ -45,7 +48,7 @@ def main() -> None:
     if not train_data:
         raise ValueError(f"No training records found in {args.manifest}")
     device = torch.device("cuda" if torch.cuda.is_available() and not args.cpu else "cpu")
-    model = TinyUNet(len(manifest["classes"]) + 1).to(device)
+    model = build_segmentation_model(args.architecture, len(manifest["classes"]) + 1).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     loss_function = nn.CrossEntropyLoss(
         weight=pixel_class_weights(train_data, len(manifest["classes"]) + 1).to(device)
@@ -56,11 +59,14 @@ def main() -> None:
         import mlflow
 
         mlflow.set_tracking_uri(args.tracking_uri)
-        mlflow.set_experiment(args.experiment)
-        mlflow_run = mlflow.start_run(run_name=args.run_name or f"{args.dataset}-tiny-unet")
+        experiment = args.experiment or f"urban-skin/{args.dataset}/{args.architecture}"
+        mlflow.set_experiment(experiment)
+        mlflow_run = mlflow.start_run(
+            run_name=args.run_name or f"{args.dataset}-{args.architecture}"
+        )
         mlflow.log_params(
             {
-                "architecture": "TinyUNet",
+                "architecture": args.architecture,
                 "dataset": args.dataset,
                 "samples": len(train_data),
                 "epochs": args.epochs,
@@ -93,6 +99,7 @@ def main() -> None:
             {
                 "model_state": model.state_dict(),
                 "number_of_classes": len(manifest["classes"]) + 1,
+                "architecture": args.architecture,
                 "image_size": args.image_size,
                 "dataset": args.dataset,
                 "history": history,

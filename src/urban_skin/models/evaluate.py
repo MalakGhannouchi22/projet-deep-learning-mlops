@@ -10,12 +10,14 @@ import torch
 from torch.utils.data import DataLoader
 
 from urban_skin.data.segmentation_dataset import Dacl10kSegmentationDataset
-from urban_skin.models.segmentation import TinyUNet
+from urban_skin.models.segmentation import build_segmentation_model
 
 
 def evaluate(args: argparse.Namespace) -> dict[str, object]:
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    model = TinyUNet(checkpoint["number_of_classes"])
+    model = build_segmentation_model(
+        checkpoint.get("architecture", "tiny_unet"), checkpoint["number_of_classes"]
+    )
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     dataset = Dacl10kSegmentationDataset(

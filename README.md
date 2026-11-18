@@ -96,9 +96,9 @@ fair comparison.
 
 | Dataset/task | Current model | Models to compare next | Why these models fit |
 | --- | --- | --- | --- |
-| DACL10K semantic segmentation | Tiny U-Net, including weighted loss | U-Net with a pretrained ResNet-34 encoder; DeepLabV3+ with a pretrained encoder | These models predict a class for every pixel and can capture both small defects and larger regions |
-| Building facade semantic segmentation | Tiny U-Net, including weighted loss | Pretrained U-Net; DeepLabV3+; FCN-ResNet50 | COCO polygons become pixel masks, so encoder-decoder segmentation models are appropriate |
-| Corrosion semantic segmentation | Tiny U-Net, including weighted loss | Pretrained U-Net; DeepLabV3+; optionally a classification head for image-level severity | Corrosion masks provide pixel-level evidence, while severity labels can also support an image-level condition prediction |
+| DACL10K semantic segmentation | Tiny U-Net and Residual U-Net, including weighted loss | Pretrained U-Net with a ResNet-34 encoder; DeepLabV3+ | These models predict a class for every pixel and can capture both small defects and larger regions |
+| Building facade semantic segmentation | Tiny U-Net and Residual U-Net, including weighted loss | Pretrained U-Net; DeepLabV3+; FCN-ResNet50 | COCO polygons become pixel masks, so encoder-decoder segmentation models are appropriate |
+| Corrosion semantic segmentation | Tiny U-Net and Residual U-Net, including weighted loss | Pretrained U-Net; DeepLabV3+; optionally a classification head for image-level severity | Corrosion masks provide pixel-level evidence, while severity labels can also support an image-level condition prediction |
 | Wall-defect detection | Tiny U-Net on coarse masks as a compatibility experiment | YOLOv8/YOLO11 detection model; optional instance-segmentation YOLO model | The original annotations are bounding boxes, so object detection is more faithful than rectangular mask conversion |
 | RDD2022 road-damage detection | Not trained because the local copy has no labeled training split | YOLO detection model; Faster R-CNN as a comparison | Both are detection models, but the experiment must wait for a usable labeled train/validation split |
 
@@ -124,13 +124,16 @@ same task.
 ### Recommended order of experiments
 
 1. Keep the current Tiny U-Net as the reproducible baseline.
-2. Improve the validation protocol and inspect per-class results.
-3. Train a pretrained U-Net on DACL10K and compare it with Tiny U-Net.
-4. Train DeepLabV3+ on DACL10K and compare it with both U-Net versions.
-5. Repeat the best segmentation candidates on facade and corrosion.
-6. Train a proper YOLO detector on wall defects instead of treating boxes as
+2. Compare it with the implemented Residual U-Net using the same split and
+   training budget.
+3. Improve the validation protocol and inspect per-class results.
+4. Train a pretrained U-Net on DACL10K and compare it with both local U-Net
+   architectures.
+5. Train DeepLabV3+ on DACL10K and compare it with the U-Net candidates.
+6. Repeat the best segmentation candidates on facade and corrosion.
+7. Train a proper YOLO detector on wall defects instead of treating boxes as
    exact masks.
-7. Add RDD2022 only after obtaining labeled training and validation data.
+8. Add RDD2022 only after obtaining labeled training and validation data.
 
 This plan avoids choosing a complicated model before the data and evaluation
 pipeline are trustworthy. It also makes the final presentation scientifically
@@ -378,6 +381,21 @@ training losses and nonzero corrosion validation score show that the full
 pipeline runs, while the zero DACL10K and facade scores identify the next
 research work: more data and epochs, stronger augmentation, validation
 inspection, class-specific analysis, and comparison with pretrained models.
+
+The second implemented architecture, Residual U-Net, was also trained for two
+epochs on 128 samples for a controlled comparison:
+
+```text
+DACL10K Residual U-Net:  validation evaluation is wired; the current small
+                         run requires further validation analysis
+Facade Residual U-Net:   validation mean IoU 0.000000; Dice 0.000000
+Corrosion Residual U-Net: validation mean IoU 0.350184; Dice 0.518721
+```
+
+The corrosion result shows why model comparison matters: Residual U-Net is
+implemented and measurable, but its short run did not beat the weighted Tiny
+U-Net. A model is not called “better” only because it is larger; it must win
+under the same data, split, and training budget.
 The evaluation code reports the measured result instead of hiding a weak model.
 
 ## DVC and MLflow
@@ -393,7 +411,26 @@ dvc repro
 mlflow ui --backend-store-uri .\mlruns --port 5000
 ```
 
-Training runs can be tracked directly in MLflow:
+Training runs can be tracked directly in MLflow. By default, each dataset and
+architecture receives its own experiment, so results are not mixed:
+
+```text
+urban-skin/dacl10k/tiny_unet
+urban-skin/dacl10k/residual_unet
+urban-skin/facade/tiny_unet
+urban-skin/facade/residual_unet
+urban-skin/corrosion/tiny_unet
+urban-skin/corrosion/residual_unet
+urban-skin/walls/tiny_unet
+urban-skin/walls/residual_unet
+```
+
+Each run records the dataset, architecture, number of samples, epochs, image
+size, batch size, learning rate, device, training loss, and checkpoint artifact.
+This makes it possible to open MLflow and compare models within one dataset
+without confusing a corrosion experiment with a facade experiment.
+
+Example:
 
 ```powershell
 .\.venv\Scripts\python.exe -m urban_skin.models.train `
@@ -407,6 +444,28 @@ Training runs can be tracked directly in MLflow:
 
 Then open <http://127.0.0.1:5000> to inspect parameters, loss, and checkpoint
 artifacts.
+
+## Git branch structure
+
+I keep the repository organized with a small branch strategy:
+
+```text
+main
+  └── develop
+       ├── feature/data-adapters
+       ├── feature/segmentation-models
+       ├── feature/mlflow-tracking
+       ├── feature/api-dashboard
+       └── experiment/<dataset>-<model>
+```
+
+- `main` contains verified milestones suitable for demonstration.
+- `develop` integrates completed work before it reaches `main`.
+- `feature/...` branches contain focused implementation changes.
+- `experiment/...` branches contain model-specific training or evaluation
+  changes, for example `experiment/corrosion-residual-unet`.
+- Raw datasets, checkpoints, and temporary outputs are not committed to Git;
+  DVC tracks dataset metadata and MLflow tracks experiment artifacts.
 
 The next modelling milestone is a controlled comparison of stronger
 segmentation models on DACL10K, facade, and corrosion, followed by a proper

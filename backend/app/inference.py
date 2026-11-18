@@ -42,10 +42,13 @@ class InferenceService:
         if self._torch_model is None and self.model_path.suffix == ".pt":
             import torch
 
-            from urban_skin.models.segmentation import TinyUNet
+            from urban_skin.models.segmentation import build_segmentation_model
 
             checkpoint = torch.load(self.model_path, map_location="cpu", weights_only=True)
-            model = TinyUNet(checkpoint["number_of_classes"])
+            model = build_segmentation_model(
+                checkpoint.get("architecture", "tiny_unet"),
+                checkpoint["number_of_classes"],
+            )
             model.load_state_dict(checkpoint["model_state"])
             model.eval()
             self._torch_model = (model, checkpoint["image_size"])

@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from urban_skin.data.segmentation_dataset import Dacl10kSegmentationDataset
 from urban_skin.models.losses import pixel_class_weights
-from urban_skin.models.segmentation import TinyUNet
+from urban_skin.models.segmentation import build_segmentation_model
 
 
 def train(args: argparse.Namespace) -> dict[str, object]:
@@ -24,7 +24,7 @@ def train(args: argparse.Namespace) -> dict[str, object]:
         Path(args.manifest), "train", args.image_size, args.max_samples
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
-    model = TinyUNet(args.number_of_classes).to(device)
+    model = build_segmentation_model(args.architecture, args.number_of_classes).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
     loss_function = nn.CrossEntropyLoss(
         weight=pixel_class_weights(dataset, args.number_of_classes).to(device)
@@ -35,11 +35,12 @@ def train(args: argparse.Namespace) -> dict[str, object]:
         import mlflow
 
         mlflow.set_tracking_uri(args.tracking_uri)
-        mlflow.set_experiment(args.experiment)
+        experiment = args.experiment or f"urban-skin/dacl10k/{args.architecture}"
+        mlflow.set_experiment(experiment)
         mlflow_run = mlflow.start_run(run_name=args.run_name)
         mlflow.log_params(
             {
-                "architecture": "TinyUNet",
+                "architecture": args.architecture,
                 "dataset": "dacl10k",
                 "samples": len(dataset),
                 "epochs": args.epochs,
@@ -71,6 +72,7 @@ def train(args: argparse.Namespace) -> dict[str, object]:
             {
                 "model_state": model.state_dict(),
                 "number_of_classes": args.number_of_classes,
+                "architecture": args.architecture,
                 "image_size": args.image_size,
                 "history": history,
             },
@@ -94,6 +96,9 @@ def main() -> None:
     parser.add_argument("--manifest", default="data/processed/dacl10k_manifest.json")
     parser.add_argument("--output", default="models/dacl10k_tiny_unet.pt")
     parser.add_argument("--number-of-classes", type=int, default=20)
+    parser.add_argument(
+        "--architecture", choices=("tiny_unet", "residual_unet"), default="tiny_unet"
+    )
     parser.add_argument("--image-size", type=int, default=128)
     parser.add_argument("--max-samples", type=int, default=64)
     parser.add_argument("--epochs", type=int, default=2)
@@ -103,7 +108,7 @@ def main() -> None:
     parser.add_argument("--cpu", action="store_true")
     parser.add_argument("--mlflow", action="store_true")
     parser.add_argument("--tracking-uri", default="file:./mlruns")
-    parser.add_argument("--experiment", default="urban-skin-dacl10k")
+    parser.add_argument("--experiment")
     parser.add_argument("--run-name", default="tiny-unet-baseline")
     args = parser.parse_args()
     print(json.dumps(train(args), indent=2))
