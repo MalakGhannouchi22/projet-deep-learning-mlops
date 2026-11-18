@@ -87,6 +87,56 @@ The models share the same architecture and training code, but they do not share
 weights or pretend that a facade class means the same thing as a corrosion
 class.
 
+## Model inspection and comparison plan
+
+The current project has a working baseline, but a good computer-vision study
+should compare more than one model on the **same dataset and split**. The
+following table separates what is implemented now from the models planned for a
+fair comparison.
+
+| Dataset/task | Current model | Models to compare next | Why these models fit |
+| --- | --- | --- | --- |
+| DACL10K semantic segmentation | Tiny U-Net, including weighted loss | U-Net with a pretrained ResNet-34 encoder; DeepLabV3+ with a pretrained encoder | These models predict a class for every pixel and can capture both small defects and larger regions |
+| Building facade semantic segmentation | Tiny U-Net, including weighted loss | Pretrained U-Net; DeepLabV3+; FCN-ResNet50 | COCO polygons become pixel masks, so encoder-decoder segmentation models are appropriate |
+| Corrosion semantic segmentation | Tiny U-Net, including weighted loss | Pretrained U-Net; DeepLabV3+; optionally a classification head for image-level severity | Corrosion masks provide pixel-level evidence, while severity labels can also support an image-level condition prediction |
+| Wall-defect detection | Tiny U-Net on coarse masks as a compatibility experiment | YOLOv8/YOLO11 detection model; optional instance-segmentation YOLO model | The original annotations are bounding boxes, so object detection is more faithful than rectangular mask conversion |
+| RDD2022 road-damage detection | Not trained because the local copy has no labeled training split | YOLO detection model; Faster R-CNN as a comparison | Both are detection models, but the experiment must wait for a usable labeled train/validation split |
+
+### How the comparison will be made
+
+For DACL10K, facade, and corrosion, I should keep the following fixed when
+comparing models:
+
+1. the same training and validation records;
+2. the same image size and preprocessing;
+3. the same class definitions;
+4. the same random seed policy;
+5. the same evaluation metrics: mean IoU, per-class IoU, Dice, and validation
+   loss;
+6. the same checkpoint-selection rule, such as the best validation mean IoU.
+
+For wall defects and RDD2022, the correct comparison is different because the
+task is detection. I should report precision, recall, mAP@50, and mAP@50:95,
+along with the number of false positives and missed defects. Detection results
+must not be compared directly with segmentation IoU as if they measured the
+same task.
+
+### Recommended order of experiments
+
+1. Keep the current Tiny U-Net as the reproducible baseline.
+2. Improve the validation protocol and inspect per-class results.
+3. Train a pretrained U-Net on DACL10K and compare it with Tiny U-Net.
+4. Train DeepLabV3+ on DACL10K and compare it with both U-Net versions.
+5. Repeat the best segmentation candidates on facade and corrosion.
+6. Train a proper YOLO detector on wall defects instead of treating boxes as
+   exact masks.
+7. Add RDD2022 only after obtaining labeled training and validation data.
+
+This plan avoids choosing a complicated model before the data and evaluation
+pipeline are trustworthy. It also makes the final presentation scientifically
+clear: the baseline is implemented, the stronger models are controlled
+comparisons, and unavailable datasets are not presented as completed results.
+
 ## Architecture
 
 ```text
